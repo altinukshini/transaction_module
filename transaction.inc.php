@@ -1,5 +1,4 @@
 <?php
-
 /*
     Copyright 2016 Altin Ukshini <altin.ukshini@gmail.com>
     
@@ -56,7 +55,8 @@ function transaction_install($old_revision = 0) {
               `description` varchar(255) NOT NULL,
               `code` varchar(8) NOT NULL,
               `value` mediumint(8) NOT NULL,
-              `type` varchar(255) NOT NULL,
+              `type` varchar(25) NOT NULL,
+              `method` varchar(25) NOT NULL,
               `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
               PRIMARY KEY (`trnid`)
             ) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
@@ -292,6 +292,7 @@ function transaction_data ($opts = array()) {
         , `code`
         , `value`
         , `type`
+        , `method`
         FROM `transaction`
     ";
     $sql .= "WHERE 1 ";
@@ -351,6 +352,7 @@ function transaction_data ($opts = array()) {
             , 'code' => $row['code']
             , 'value' => $row['value']
             , 'type' => $row['type']
+            , 'method' => $row['method']
         );
         $transactions[] = $transaction;
         $row = mysql_fetch_assoc($res);
@@ -384,6 +386,7 @@ function transaction_save ($transaction) {
     $esc_code = mysql_real_escape_string($transaction['code']);
     $esc_value = mysql_real_escape_string($transaction['value']);
     $esc_type = mysql_real_escape_string($transaction['type']);
+    $esc_method = mysql_real_escape_string($transaction['method']);
     // Query database
     if (array_key_exists('trnid', $transaction) && !empty($transaction['trnid'])) {
         // transaction already exists, update
@@ -395,6 +398,7 @@ function transaction_save ($transaction) {
             , `code` = '$esc_code'
             , `value` = '$esc_value'
             , `type` = '$esc_type'
+            , `method` = '$esc_method'
             WHERE
             `trnid` = '$esc_trnid'
         ";
@@ -411,6 +415,7 @@ function transaction_save ($transaction) {
                 , `code`
                 , `value`
                 , `type`
+                , `method`
             )
             VALUES
             (
@@ -419,6 +424,7 @@ function transaction_save ($transaction) {
                 , '$esc_code'
                 , '$esc_value'
                 , '$esc_type'
+                , '$esc_method'
             )
         ";
         $res = mysql_query($sql);
@@ -480,11 +486,12 @@ function transaction_table ($opts) {
         "columns" => array()
     );
     // Add columns
-    if (user_access('transaction_view')) { // Permission check
-        $table['columns'][] = array("title"=>'date');
-        $table['columns'][] = array("title"=>'description');
-        $table['columns'][] = array("title"=>'amount');
-        $table['columns'][] = array("title"=>'type');
+    if (user_access('transaction_view') || user_access('transaction_edit')) { // Permission check
+        $table['columns'][] = array("title"=>'Date');
+        $table['columns'][] = array("title"=>'Description');
+        $table['columns'][] = array("title"=>'Amount');
+        $table['columns'][] = array("title"=>'Type');
+        $table['columns'][] = array("title"=>'Paid with');
     }
     // Add ops column
     if (!$export && (user_access('transaction_edit') || user_access('transaction_delete'))) {
@@ -493,11 +500,12 @@ function transaction_table ($opts) {
     // Add rows
     foreach ($data as $transaction) {
         $row = array();
-        if (user_access('transaction_view')) {
+        if (user_access('transaction_view') || user_access('transaction_edit')) {
             $row[] = $transaction['date'];
             $row[] = $transaction['description'];
             $row[] = transaction_format_currency($transaction, true);
             $row[] = $transaction['type'];
+            $row[] = $transaction['method'];
         }
         if (!$export && (user_access('transaction_edit') || user_access('transaction_delete'))) {
             // Add ops column
@@ -524,11 +532,22 @@ function transaction_table ($opts) {
 function transaction_type_options () {
 
     $options = array();
-    $options['income'] = 'income';
-    $options['expense'] = 'expense';
+    $options['income'] = 'Income';
+    $options['expense'] = 'Expense';
     return $options;
 }
 
+/**
+ * @return Array mapping payment method options.
+ */
+function transaction_method_options () {
+
+    $options = array();
+    $options['cash'] = 'Cash';
+    $options['bank'] = 'Bank';
+    $options['other'] = 'Other';
+    return $options;
+}
 /**
  * @return The form structure for adding a transaction.
 */
@@ -573,6 +592,13 @@ function transaction_add_form () {
                         , 'label' => 'Type'
                         , 'name' => 'type'
                         , 'options' => transaction_type_options()
+                        , 'class' => 'float'
+                    )
+                    , array(
+                        'type' => 'select'
+                        , 'label' => 'Payment method'
+                        , 'name' => 'method'
+                        , 'options' => transaction_method_options()
                         , 'class' => 'float'
                     )
                     , array(
@@ -645,6 +671,13 @@ function transaction_edit_form ($trnid) {
                         , 'name' => 'type'
                         , 'options' => transaction_type_options()
                         , 'selected' => $transaction['type']
+                    )
+                    , array(
+                        'type' => 'select'
+                        , 'label' => 'Payment method'
+                        , 'name' => 'method'
+                        , 'options' => transaction_method_options()
+                        , 'selected' => $transaction['method']
                     )
                     , array(
                         'type' => 'submit'
@@ -759,7 +792,7 @@ function transaction_filter_form () {
 function transaction_page_list () {
     $pages = array();
 
-    if (user_access('transaction_edit')) {
+    if (user_access('transaction_view') || user_access('transaction_edit')) {
         $pages[] = 'transactions';
         $pages[] = 'transaction';
     }
@@ -777,7 +810,7 @@ function transaction_page (&$page_data, $page_name, $options) {
     switch ($page_name) {
         case 'transactions':
             page_set_title($page_data, 'Transactions');
-            if (user_access('transaction_edit')) {
+            if (user_access('transaction_view') || user_access('transaction_edit')) {
                 $filter = array_key_exists('transaction_filter', $_SESSION) ? $_SESSION['transaction_filter'] : '';
                 $content = theme('form', crm_get_form('transaction_add'));
                 $content .= theme('form', crm_get_form('transaction_filter'));
@@ -814,6 +847,7 @@ function command_transaction_add() {
         , 'code' => $value['code']
         , 'value' => $value['value']
         , 'type' => $_POST['type']
+        , 'method' => $_POST['method']
     );
     $transaction = transaction_save($transaction);
     message_register('1 transaction added.');
