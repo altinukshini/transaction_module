@@ -10,6 +10,10 @@ Seltzer CRM project on github: https://github.com/elplatt/seltzer
 
 Create a directory named '''transaction''' under /crm/modules and place transaction.inc.php in that directory.
 
+In '''config.inc.php''' add: $config_modules[] = "transaction";
+
+and in '''$config_links''' array also add: , 'transactions' => 'Transactions'
+
 From your admin panel, go to upgrade page on your menu, and upgrade your crm modules.
 
 
